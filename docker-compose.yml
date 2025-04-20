@@ -1,6 +1,4 @@
 version: '3.8'
-name: hair-styling
-
 services:
   frontend:
     build:
