@@ -27,7 +27,7 @@ services:
       - ./backend:/app
     environment:
       - DEBUG=1
-      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,backend
+      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,backend,147.93.97.15
     command: python manage.py runserver 0.0.0.0:8002
 
 

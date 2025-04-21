@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-h1oa_=n+errqe!ebsov-@hcw1lc7k21!9sn)mur*k(udz#k-wt
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['147.93.97.15']
 
 
 # Application definition
@@ -83,9 +83,7 @@ STATIC_URL = 'static/'
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3001",
-    "http://147.97.93.15:3001",
-    "http://147.97.93.15",
+
 ]
 
 # REST Framework settings
