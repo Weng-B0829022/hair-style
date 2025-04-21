@@ -85,6 +85,7 @@ STATIC_URL = 'static/'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3001",
     "http://147.97.93.15:3001",
+    "http://147.97.93.15",
 ]
 
 # REST Framework settings
