@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins: ['147.93.97.15'],
   images: {
     domains: [
       'via.placeholder.com',
