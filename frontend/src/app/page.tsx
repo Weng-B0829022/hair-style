@@ -105,11 +105,18 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setElapsedTime(0);
+    
+    // Start the timer
+    const timer = setInterval(() => {
+      setElapsedTime(prev => prev + 1);
+    }, 1000);
     
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/qa/beauty/`, {
@@ -130,6 +137,7 @@ export default function Home() {
       setError('搜尋過程中發生錯誤');
       console.error(err);
     } finally {
+      clearInterval(timer);
       setLoading(false);
     }
   };
@@ -153,7 +161,7 @@ export default function Home() {
               disabled={loading}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {loading ? '生成中...' : '生成文章'}
+              {loading ? `生成中... ${elapsedTime}秒` : '生成文章'}
             </button>
           </div>
         </form>

@@ -7,11 +7,41 @@ import json
 import random
 from bs4 import BeautifulSoup
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+import asyncio
+import aiohttp
+from typing import Dict, Any
 
 ALLOWED_DOMAINS = [
     'www.instagram.com',
     'instagram.com',
 ]
+
+# 全局進度追蹤器
+class ProgressTracker:
+    def __init__(self):
+        self.progress: Dict[str, Any] = {
+            'status': 'idle',
+            'current': 0,
+            'total': 0,
+            'message': '',
+            'percentage': 0
+        }
+    
+    def update(self, status: str, current: int, total: int, message: str):
+        self.progress.update({
+            'status': status,
+            'current': current,
+            'total': total,
+            'message': message,
+            'percentage': int((current / total * 100) if total > 0 else 0)
+        })
+    
+    def get_progress(self) -> Dict[str, Any]:
+        return self.progress
+
+progress_tracker = ProgressTracker()
 
 def access_gpt(messages, model='gpt-4o-2024-08-06'):
     try:
@@ -111,13 +141,12 @@ def search_beauty_articles(keyword):
         print(f'Search error: {str(e)}')
         return []
 
-def fetch_article_content(url, snippet=''):
+async def fetch_article_content_async(session, url, snippet=''):
     try:
         if not any(url.startswith(f'https://{domain}') for domain in ALLOWED_DOMAINS):
             print(f"URL 不是允許的網域: {url}")
             return None
             
-        # 直接使用 snippet 作為內容
         post_data = {
             'title': None,
             'content': snippet,
@@ -138,67 +167,9 @@ def fetch_article_content(url, snippet=''):
         print(f"處理內容時發生錯誤: {str(e)}")
         return None
 
-def generate_beauty_content(search_results):
-    if not search_results:
-        print("沒有搜索結果，返回空列表")
-        return []
-        
-    print("開始生成美容內容...")
-    load_dotenv(os.path.join(settings.BASE_DIR, '.env'))
-    client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-
-    # 定義內容類別和子類別
-    content_categories = {
-        '髮型趨勢介紹': ['染髮流行色', '剪髮造型趨勢', '韓系流行'],
-        '客戶實拍成果': ['剪髮前後對比', '染燙髮後實拍照', '顧客好評回饋'],
-        '教學科普文': ['洗髮教學', '吹整教學', '臉型與髮型搭配知識'],
-        '美髮產品推薦': ['護髮品推薦', '造型品搭配', '髮型設計產品組合'],
-        '品牌門市日常': ['門市日常花絮', '設計師介紹', '限動互動']
-    }
-
-    articles = []
-    total_categories = len(content_categories)
-    
-    # 先抓取所有文章的內容
-    print("\n抓取所有文章內容...")
-    article_contents = []
-    for article_index, relevant_article in enumerate(search_results, 1):
-        print(f"\n  處理文章 {article_index}/{len(search_results)}")
-        print(f"  參考文章: {relevant_article.get('link', '無來源')}")
-        
-        article_content = fetch_article_content(
-            relevant_article.get('link', ''),
-            relevant_article.get('snippet', '')  # 傳入 snippet
-        )
-        if article_content:
-            print(f"    ✓ 成功抓取文章內容")
-            article_contents.append({
-                'url': relevant_article.get('link', ''),
-                'title': relevant_article.get('title', ''),
-                'snippet': relevant_article.get('snippet', ''),
-                'content': article_content.get('content', ''),
-                'raw_data': article_content.get('raw_data', {})
-            })
-        else:
-            print(f"    ✗ 無法抓取文章內容")
-    
-    if not article_contents:
-        print("沒有成功抓取到任何文章內容")
-        return []
-    
-    print(f"\n成功抓取 {len(article_contents)} 篇文章內容", article_contents)
-    
-    # 處理每個類別和子類別
-    for category_index, (category, subcategories) in enumerate(content_categories.items(), 1):
-        print(f"\n處理類別 {category_index}/{total_categories}: {category} 內容{article_contents}")
-        
-        # 只取一個子類別
-        subcategory = random.choice(subcategories)
-        print(f"\n  處理子類別: {subcategory}")
-        
-        try:
-            print("    正在生成 GPT 提示詞...")
-            system_prompt = """你是一個專業的美容美髮文案撰寫專家。請根據提供的文章內容，生成符合以下格式的JSON內容：
+async def generate_content_for_category(client, category, subcategory, article_contents):
+    try:
+        system_prompt = """你是一個專業的美容美髮文案撰寫專家。請根據提供的文章內容，生成符合以下格式的JSON內容：
 {
     "title": "主標題",
     "subtitle": "副標題",
@@ -206,18 +177,17 @@ def generate_beauty_content(search_results):
     "image_prompt": "圖片生成提示詞"
 }"""
 
-            # 構建參考文章內容
-            reference_articles = []
-            for i, article in enumerate(article_contents):
-                reference_articles.append(
-                    f"文章 {i+1}:\n"
-                    f"標題: {article['title']}\n"
-                    f"內容摘要: {article['content']}"
-                )
-            
-            reference_content = "\n\n".join(reference_articles)
+        reference_articles = []
+        for i, article in enumerate(article_contents):
+            reference_articles.append(
+                f"文章 {i+1}:\n"
+                f"標題: {article['title']}\n"
+                f"內容摘要: {article['content']}"
+            )
+        
+        reference_content = "\n\n".join(reference_articles)
 
-            user_prompt = f"""請為以下類別生成內容：
+        user_prompt = f"""請為以下類別生成內容：
 
 類別: {category}
 子類別: {subcategory}
@@ -237,52 +207,106 @@ def generate_beauty_content(search_results):
 - 加入實用的建議和技巧
 - 使用口語化的表達方式"""
 
-            print("    正在調用 GPT API...")
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        
+        content_str = response.choices[0].message.content.strip()
+        content_str = content_str.replace('\r', '').replace('\t', '   ')
+        
+        try:
+            content = json.loads(content_str)
+        except json.JSONDecodeError as e:
+            print(f"JSON 解析失敗: {str(e)}")
+            return None
+        
+        image_url = await asyncio.to_thread(generate_image, content.get('image_prompt', ''))
+        
+        return {
+            'category': category,
+            'subcategory': subcategory,
+            'title': content.get('title', '未知標題'),
+            'subtitle': content.get('subtitle', '未知副標題'),
+            'content': content.get('content', '內容生成失敗'),
+            'image_url': image_url or 'https://via.placeholder.com/1024x1024.png?text=Image+Generation+Failed',
+            'source_articles': article_contents
+        }
+    except Exception as e:
+        print(f"處理失敗: {str(e)}")
+        return None
+
+async def generate_beauty_content_async(search_results):
+    if not search_results:
+        print("沒有搜索結果，返回空列表")
+        return []
+        
+    print("開始生成美容內容...")
+    load_dotenv(os.path.join(settings.BASE_DIR, '.env'))
+    client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+
+    content_categories = {
+        '髮型趨勢介紹': ['染髮流行色', '剪髮造型趨勢', '韓系流行'],
+        '客戶實拍成果': ['剪髮前後對比', '染燙髮後實拍照', '顧客好評回饋'],
+        '教學科普文': ['洗髮教學', '吹整教學', '臉型與髮型搭配知識'],
+        '美髮產品推薦': ['護髮品推薦', '造型品搭配', '髮型設計產品組合'],
+        '品牌門市日常': ['門市日常花絮', '設計師介紹', '限動互動']
+    }
+
+    # 抓取所有文章內容
+    print("\n抓取所有文章內容...")
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for article in search_results:
+            task = fetch_article_content_async(
+                session,
+                article.get('link', ''),
+                article.get('snippet', '')
             )
-            
-            print("    正在處理 GPT 回應...")
-            content_str = response.choices[0].message.content.strip()
-            content_str = content_str.replace('\r', '').replace('\t', '   ')
-            
-            try:
-                content = json.loads(content_str)
-                print("    ✓ JSON 解析成功")
-            except json.JSONDecodeError as e:
-                print(f"    ✗ JSON 解析失敗: {str(e)}")
-                print(f"    內容: {content_str}")
-                continue
-            
-            print("    正在生成圖片...")
-            image_url = generate_image(content.get('image_prompt', ''))
-            if image_url:
-                print("    ✓ 圖片生成成功")
-            else:
-                print("    ✗ 圖片生成失敗，使用預設圖片")
-            
-            # 添加所有參考文章的資訊
-            articles.append({
-                'category': category,
-                'subcategory': subcategory,
-                'title': content.get('title', '未知標題'),
-                'subtitle': content.get('subtitle', '未知副標題'),
-                'content': content.get('content', '內容生成失敗'),
-                'image_url': image_url or 'https://via.placeholder.com/1024x1024.png?text=Image+Generation+Failed',
-                'source_articles': article_contents  # 包含所有參考文章的完整資訊
-            })
-            print(f"    ✓ 成功生成 {category} - {subcategory} 的內容")
-            
-        except Exception as e:
-            print(f"    ✗ 處理失敗: {str(e)}")
-            continue
+            tasks.append(task)
+        
+        article_contents = []
+        with tqdm(total=len(tasks), desc="抓取文章") as pbar:
+            for completed_task in asyncio.as_completed(tasks):
+                result = await completed_task
+                if result:
+                    article_contents.append(result)
+                pbar.update(1)
+
+    if not article_contents:
+        print("沒有成功抓取到任何文章內容")
+        return []
+
+    print(f"\n成功抓取 {len(article_contents)} 篇文章內容")
+
+    # 並行生成所有類別的內容
+    tasks = []
+    for category, subcategories in content_categories.items():
+        subcategory = random.choice(subcategories)
+        task = generate_content_for_category(client, category, subcategory, article_contents)
+        tasks.append(task)
+
+    articles = []
+    with tqdm(total=len(tasks), desc="生成內容") as pbar:
+        for completed_task in asyncio.as_completed(tasks):
+            result = await completed_task
+            if result:
+                articles.append(result)
+            pbar.update(1)
 
     print(f"\n內容生成完成，共生成 {len(articles)} 篇文章")
     return articles
+
+def get_progress():
+    """獲取當前進度"""
+    return progress_tracker.get_progress()
+
+def generate_beauty_content(search_results):
+    return asyncio.run(generate_beauty_content_async(search_results))
 
 def process_beauty_query(keyword):
     # 搜尋相關文章

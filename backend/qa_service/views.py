@@ -1,8 +1,8 @@
 from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .serializers import QASerializer
 from .services import process_qa, process_beauty_query
+from django.http import JsonResponse
 
 # Create your views here.
 
@@ -15,9 +15,7 @@ def ask_question(request):
             return Response({'error': 'Question is required'}, status=400)
             
         result = process_qa(question)
-        serializer = QASerializer(data=result)
-        serializer.is_valid(raise_exception=True)
-        return Response(serializer.data)
+        return Response(result)
         
     except Exception as e:
         return Response({'error': str(e)}, status=500)
