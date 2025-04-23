@@ -79,12 +79,12 @@ function ArticleModal({ article, onClose }: ArticleModalProps) {
                   className="block p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <h5 className="text-blue-600 font-medium mb-2">{source.title}</h5>
-                  <p className="text-gray-600 text-sm mb-2">{source.snippet}</p>
+                  <p className="text-gray-600 text-sm mb-2">{source.content}</p>
                   {source.raw_data?.hashtags && source.raw_data.hashtags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {source.raw_data.hashtags.map((tag: string, tagIndex: number) => (
                         <span key={tagIndex} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                          {tag}
+                          {source.content}
                         </span>
                       ))}
                     </div>

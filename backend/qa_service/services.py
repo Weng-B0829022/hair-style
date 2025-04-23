@@ -82,7 +82,8 @@ def process_qa(question):
     system_prompt = """你是一個專業的問答助手。當收到問題時，你需要：
     1. 提供詳細的答案
     2. 生成一個適合的圖片描述，這個描述將用於生成相關的圖片
-    請以 JSON 格式返回，包含 'answer' 和 'image_prompt' 兩個字段。"""
+    3. 提供參考來源
+    請以 JSON 格式返回，包含 'answer'、'image_prompt' 和 'source' 三個字段。"""
     print(question)
     messages = [
         {"role": "system", "content": system_prompt},
@@ -95,6 +96,7 @@ def process_qa(question):
         response_data = json.loads(gpt_response)
         answer = response_data['answer']
         image_prompt = response_data['image_prompt']
+        source = response_data.get('source', '')  # Get source with default empty string
     except json.JSONDecodeError:
         raise ValueError("Invalid GPT response format")
 
@@ -103,7 +105,8 @@ def process_qa(question):
     return {
         'question': question,
         'answer': answer,
-        'image_url': image_url
+        'image_url': image_url,
+        'source': source  # Include source in the response
     }
 
 def search_beauty_articles(keyword):
@@ -160,6 +163,7 @@ async def fetch_article_content_async(session, url, snippet=''):
         return {
             'title': post_data['title'],
             'content': post_data['content'],
+            'url': url,  # Add URL to the returned data
             'raw_data': post_data
         }
         
